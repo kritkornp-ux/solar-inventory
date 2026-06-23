@@ -80,8 +80,8 @@ export default function App() {
   const [justSaved, setJustSaved] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  const [loginName, setLoginName] = useState(null);
-  const [loginPin, setLoginPin] = useState('');
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
   const [loginErr, setLoginErr] = useState('');
 
   const {
@@ -104,14 +104,14 @@ export default function App() {
   }, [user]);
 
   const doLogin = () => {
-    if (!loginName) return;
-    const u = users.find(x => x.id === loginName);
-    if (!u) return;
-    if (loginPin !== u.pin) { setLoginErr('รหัส PIN ไม่ถูกต้อง'); return; }
+    const uname = loginUser.trim().toLowerCase();
+    if (!uname) { setLoginErr('กรุณากรอกชื่อผู้ใช้'); return; }
+    const u = users.find(x => x.id.toLowerCase() === uname);
+    if (!u || loginPass !== u.pin) { setLoginErr('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'); return; }
     setUser(u);
     setLoginErr('');
-    setLoginPin('');
-    setLoginName(null);
+    setLoginPass('');
+    setLoginUser('');
   };
 
   const navigate = (k) => { setScreen(k); setDrawer(false); setJustSaved(false); };
@@ -126,47 +126,25 @@ export default function App() {
             <div style={{ fontSize: '14px', color: '#7b8fa3' }}>ระบบจัดการคลังสินค้าโซลาร์เซลล์</div>
           </div>
 
-          {!loginName ? (
-            <>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#4a5d74', marginBottom: 16 }}>เลือกผู้ใช้งาน</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-                {users.map(u => (
-                  <button key={u.id} onClick={() => { setLoginName(u.id); setLoginPin(''); setLoginErr(''); }}
-                    style={{ background: 'none', border: '2px solid #e6edf5', borderRadius: 16, padding: '14px 4px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: 'pointer', transition: 'border-color .2s' }}>
-                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: u.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>
-                      {u.name[0]}
-                    </div>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#2d3e50', lineHeight: 1.3, textAlign: 'center' }}>{u.name.split(' ')[0]}</div>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              {(() => { const u = users.find(x => x.id === loginName); return (
-                <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: '50%', background: u.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 24, marginBottom: 8 }}>{u.name[0]}</div>
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#0d1b2e' }}>{u.name}</div>
-                  <div style={{ fontSize: '13px', color: '#7b8fa3' }}>{u.role}</div>
-                </div>
-              ); })()}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: '#4a5d74', display: 'block', marginBottom: 6 }}>รหัส PIN</label>
-                <input type="password" maxLength={4} value={loginPin} onChange={e => { setLoginPin(e.target.value); setLoginErr(''); }}
-                  onKeyDown={e => { if (e.key === 'Enter') doLogin(); }}
-                  style={{ width: '100%', padding: '12px 16px', border: '2px solid #e6edf5', borderRadius: 12, fontSize: 18, textAlign: 'center', letterSpacing: 12, fontFamily: MONO }} placeholder="••••" />
-                {loginErr && <div style={{ color: RED, fontSize: '12px', marginTop: 6, textAlign: 'center' }}>{loginErr}</div>}
-              </div>
-              <button onClick={doLogin}
-                style={{ width: '100%', padding: '14px', background: BLUE, color: '#fff', border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700, marginBottom: 12 }}>
-                เข้าสู่ระบบ
-              </button>
-              <button onClick={() => { setLoginName(null); setLoginPin(''); setLoginErr(''); }}
-                style={{ width: '100%', padding: '10px', background: 'none', border: '1px solid #e6edf5', borderRadius: 12, fontSize: '13px', fontWeight: 600, color: '#7b8fa3' }}>
-                ← เลือกผู้ใช้อื่น
-              </button>
-            </>
-          )}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: '13px', fontWeight: 600, color: '#4a5d74', display: 'block', marginBottom: 6 }}>ชื่อผู้ใช้ (Username)</label>
+            <input type="text" autoCapitalize="none" autoCorrect="off" value={loginUser}
+              onChange={e => { setLoginUser(e.target.value); setLoginErr(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') doLogin(); }}
+              style={{ width: '100%', padding: '12px 16px', border: '2px solid #e6edf5', borderRadius: 12, fontSize: 15, fontFamily: FONT, boxSizing: 'border-box' }} placeholder="เช่น admin" />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: '13px', fontWeight: 600, color: '#4a5d74', display: 'block', marginBottom: 6 }}>รหัสผ่าน (Password)</label>
+            <input type="password" value={loginPass}
+              onChange={e => { setLoginPass(e.target.value); setLoginErr(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') doLogin(); }}
+              style={{ width: '100%', padding: '12px 16px', border: '2px solid #e6edf5', borderRadius: 12, fontSize: 15, fontFamily: FONT, boxSizing: 'border-box' }} placeholder="••••••" />
+            {loginErr && <div style={{ color: RED, fontSize: '12px', marginTop: 8, textAlign: 'center' }}>{loginErr}</div>}
+          </div>
+          <button onClick={doLogin}
+            style={{ width: '100%', padding: '14px', background: BLUE, color: '#fff', border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700 }}>
+            เข้าสู่ระบบ
+          </button>
         </div>
       </div>
     );
