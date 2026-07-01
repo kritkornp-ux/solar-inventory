@@ -89,7 +89,8 @@ export default function App() {
   const {
     products, locations, movements, customerGroups: customerData,
     users, surveys, setSurveys, loading: dbLoading, dbConnected,
-    addMovement, addSurvey, updateProduct
+    addMovement, addSurvey, updateProduct,
+    addProduct, deleteProduct, adjustStock, addLocation, deleteLocation
   } = useSupabaseData();
 
   const mobile = vw <= BP;
@@ -115,6 +116,8 @@ export default function App() {
     setLoginPass('');
     setLoginUser('');
   };
+
+  const canEdit = !!user && ['เจ้าของ', 'ผู้จัดการ', 'แอดมิน'].includes(user.role);
 
   const navigate = (k) => { setScreen(k); setDrawer(false); setJustSaved(false); };
 
@@ -248,8 +251,8 @@ export default function App() {
       case 'dashboard': return <DashboardScreen products={products} movements={movements} mobile={mobile} />;
       case 'receiving': return <ReceivingScreen mobile={mobile} />;
       case 'issue': return <IssueScreen mobile={mobile} />;
-      case 'items': return <ItemsScreen products={products} movements={movements} selectedSku={selectedSku} setSelectedSku={setSelectedSku} catFilter={catFilter} setCatFilter={setCatFilter} mobile={mobile} />;
-      case 'locations': return <LocationsScreen locations={locations} mobile={mobile} />;
+      case 'items': return <ItemsScreen products={products} movements={movements} locations={locations} selectedSku={selectedSku} setSelectedSku={setSelectedSku} catFilter={catFilter} setCatFilter={setCatFilter} mobile={mobile} canEdit={canEdit} user={user} updateProduct={updateProduct} addProduct={addProduct} deleteProduct={deleteProduct} adjustStock={adjustStock} />;
+      case 'locations': return <LocationsScreen locations={locations} mobile={mobile} canEdit={canEdit} addLocation={addLocation} deleteLocation={deleteLocation} />;
       case 'sales': return <SalesScreen products={products} cart={cart} setCart={setCart} mobile={mobile} />;
       case 'stockreport': return <StockReportScreen products={products} mobile={mobile} />;
       case 'movereport': return <MoveReportScreen movements={movements} moveFilter={moveFilter} setMoveFilter={setMoveFilter} mobile={mobile} />;
@@ -557,15 +560,72 @@ function IssueScreen({ mobile }) {
 /* ══════════════════════════════════════════════════════════════
    ITEMS & STOCK
    ══════════════════════════════════════════════════════════════ */
-function ItemsScreen({ products, movements, selectedSku, setSelectedSku, catFilter, setCatFilter, mobile }) {
+function Modal({ title, onClose, children }) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(13,27,46,.55)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ ...CARD, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: '#0d1b2e' }}>{title}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9aabbf' }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ItemsScreen({ products, movements, locations, selectedSku, setSelectedSku, catFilter, setCatFilter, mobile, canEdit, user, updateProduct, addProduct, deleteProduct, adjustStock }) {
   const cats = ['ทั้งหมด', ...new Set(products.map(p => p.cat))];
   const filtered = catFilter === 'ทั้งหมด' ? products : products.filter(p => p.cat === catFilter);
   const selected = selectedSku ? products.find(p => p.sku === selectedSku) : null;
   const relatedMoves = selectedSku ? movements.filter(m => m.sku === selectedSku).slice(0, 5) : [];
 
+  const [modal, setModal] = useState(null); // 'edit' | 'add' | 'in' | 'out'
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+
+  const openEdit = () => { setErr(''); setForm({ name: selected.name, cat: selected.cat, unit: selected.unit, qty: String(selected.qty), min: String(selected.min), max: String(selected.max), price: String(selected.price), loc: selected.loc }); setModal('edit'); };
+  const openAdd = () => { setErr(''); setForm({ sku: '', name: '', cat: '', unit: '', qty: '0', min: '0', max: '0', price: '0', loc: '' }); setModal('add'); };
+  const openStock = (dir) => { setErr(''); setForm({ qty: '' }); setModal(dir); };
+  const close = () => { if (!busy) { setModal(null); setErr(''); } };
+
+  const run = async (fn) => {
+    setBusy(true); setErr('');
+    const res = await fn();
+    setBusy(false);
+    if (res && res.ok === false) { setErr(res.error || 'เกิดข้อผิดพลาด'); return false; }
+    setModal(null); return true;
+  };
+  const saveEdit = () => run(() => updateProduct(selected.sku, { name: form.name, cat: form.cat, unit: form.unit, qty: form.qty, min: form.min, max: form.max, price: form.price, loc: form.loc }));
+  const saveAdd = () => {
+    if (!form.sku.trim() || !form.name.trim()) { setErr('กรุณากรอก SKU และชื่อสินค้า'); return; }
+    run(async () => { const r = await addProduct(form); if (r.ok) setSelectedSku(form.sku.trim()); return r; });
+  };
+  const saveStock = (dir) => run(() => adjustStock(selected.sku, dir, form.qty, user && user.name ? user.name : 'ระบบ'));
+  const doDelete = () => { if (window.confirm(`ยืนยันลบสินค้า "${selected.name}"?\n(ประวัติเคลื่อนไหวของสินค้านี้จะถูกลบด้วย)`)) run(async () => { const r = await deleteProduct(selected.sku); if (r.ok) setSelectedSku(null); return r; }); };
+
+  const btn = (bg) => ({ flex: 1, padding: '11px', background: bg, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' });
+  const modalBtns = (onSave, saveLabel, saveBg) => (
+    <>
+      {err && <div style={{ color: RED, fontSize: '12.5px', marginBottom: 12, textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+        <button onClick={close} disabled={busy} style={{ flex: 1, padding: '11px', background: '#eef3f9', color: '#4a5d74', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+        <button onClick={onSave} disabled={busy} style={{ ...btn(saveBg), opacity: busy ? .6 : 1 }}>{busy ? 'กำลังบันทึก…' : saveLabel}</button>
+      </div>
+    </>
+  );
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 380px', gap: 24, alignItems: 'flex-start' }}>
       <CardWrap>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0d1b2e' }}>รายการสินค้า ({filtered.length})</div>
+          {canEdit && (
+            <button onClick={openAdd} style={{ padding: '9px 16px', background: BLUE, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>➕ เพิ่มสินค้า</button>
+          )}
+        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {cats.map(c => (
             <button key={c} onClick={() => setCatFilter(c)}
@@ -646,10 +706,22 @@ function ItemsScreen({ products, movements, selectedSku, setSelectedSku, catFilt
               </>
             )}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button style={{ flex: 1, padding: '10px', background: GREEN, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700 }}>รับเข้า</button>
-              <button style={{ flex: 1, padding: '10px', background: RED, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700 }}>จ่ายออก</button>
-            </div>
+            {canEdit ? (
+              <div style={{ marginTop: 20 }}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                  <button onClick={() => openStock('in')} style={btn(GREEN)}>▼ รับเข้า</button>
+                  <button onClick={() => openStock('out')} style={btn(RED)}>▲ จ่ายออก</button>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={openEdit} style={btn(BLUE)}>✎ แก้ไข / โยก</button>
+                  <button onClick={doDelete} style={{ ...btn('#fff'), color: RED, border: '1.5px solid #fecaca' }}>🗑 ลบ</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 20, fontSize: '12px', color: '#9aabbf', textAlign: 'center', background: '#f6f9fc', padding: '10px', borderRadius: 10 }}>
+                👁 โหมดดูอย่างเดียว — เฉพาะเจ้าของ/ผู้จัดการ/แอดมิน แก้ไขได้
+              </div>
+            )}
           </CardWrap>
         ) : (
           <CardWrap style={{ textAlign: 'center', padding: '48px 24px', color: '#9aabbf' }}>
@@ -658,6 +730,53 @@ function ItemsScreen({ products, movements, selectedSku, setSelectedSku, catFilt
           </CardWrap>
         )}
       </div>
+
+      {/* ── Modal: แก้ไข / โยก ── */}
+      {modal === 'edit' && selected && (
+        <Modal title={`แก้ไขสินค้า · ${selected.sku}`} onClose={close}>
+          <RoiField label="ชื่อสินค้า" value={form.name} onChange={set('name')} type="text" />
+          <RoiField label="หมวดหมู่" value={form.cat} onChange={set('cat')} type="text" />
+          <RoiField label="หน่วย" value={form.unit} onChange={set('unit')} type="text" />
+          <RoiField label="ตำแหน่ง / โยกไปคลัง" value={form.loc} onChange={set('loc')} type="text" hint="เช่น A1-03, B2-05" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <RoiField label="คงเหลือ" value={form.qty} onChange={set('qty')} suffix={selected.unit} />
+            <RoiField label="ราคา/หน่วย" value={form.price} onChange={set('price')} suffix="฿" />
+            <RoiField label="Min" value={form.min} onChange={set('min')} />
+            <RoiField label="Max" value={form.max} onChange={set('max')} />
+          </div>
+          {modalBtns(saveEdit, 'บันทึก', GREEN)}
+        </Modal>
+      )}
+
+      {/* ── Modal: เพิ่มสินค้า ── */}
+      {modal === 'add' && (
+        <Modal title="เพิ่มสินค้าใหม่" onClose={close}>
+          <RoiField label="SKU (รหัสสินค้า)" value={form.sku} onChange={set('sku')} type="text" hint="ห้ามซ้ำ เช่น PNL-LG700" />
+          <RoiField label="ชื่อสินค้า" value={form.name} onChange={set('name')} type="text" />
+          <RoiField label="หมวดหมู่" value={form.cat} onChange={set('cat')} type="text" />
+          <RoiField label="หน่วย" value={form.unit} onChange={set('unit')} type="text" hint="เช่น แผง, เครื่อง, ก้อน" />
+          <RoiField label="ตำแหน่งจัดเก็บ" value={form.loc} onChange={set('loc')} type="text" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <RoiField label="จำนวนเริ่มต้น" value={form.qty} onChange={set('qty')} />
+            <RoiField label="ราคา/หน่วย" value={form.price} onChange={set('price')} suffix="฿" />
+            <RoiField label="Min" value={form.min} onChange={set('min')} />
+            <RoiField label="Max" value={form.max} onChange={set('max')} />
+          </div>
+          {modalBtns(saveAdd, 'เพิ่มสินค้า', BLUE)}
+        </Modal>
+      )}
+
+      {/* ── Modal: รับเข้า / จ่ายออก ── */}
+      {(modal === 'in' || modal === 'out') && selected && (
+        <Modal title={(modal === 'in' ? 'รับเข้าสินค้า' : 'จ่ายออกสินค้า') + ' · ' + selected.sku} onClose={close}>
+          <div style={{ background: '#f6f9fc', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#0d1b2e' }}>{selected.name}</div>
+            <div style={{ fontSize: '12px', color: '#7b8fa3', marginTop: 2 }}>คงเหลือปัจจุบัน: <b style={{ fontFamily: MONO }}>{selected.qty}</b> {selected.unit} · {selected.loc}</div>
+          </div>
+          <RoiField label={modal === 'in' ? 'จำนวนรับเข้า' : 'จำนวนจ่ายออก'} value={form.qty} onChange={set('qty')} suffix={selected.unit} />
+          {modalBtns(() => saveStock(modal), modal === 'in' ? 'ยืนยันรับเข้า' : 'ยืนยันจ่ายออก', modal === 'in' ? GREEN : RED)}
+        </Modal>
+      )}
     </div>
   );
 }
@@ -665,31 +784,62 @@ function ItemsScreen({ products, movements, selectedSku, setSelectedSku, catFilt
 /* ══════════════════════════════════════════════════════════════
    LOCATIONS
    ══════════════════════════════════════════════════════════════ */
-function LocationsScreen({ locations, mobile }) {
+function LocationsScreen({ locations, mobile, canEdit, addLocation, deleteLocation }) {
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ code: '', name: '', type: '', capacity: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+  const totalUnits = locations.reduce((s, l) => s + (Number(l.used) || 0), 0);
+
+  const openAdd = () => { setErr(''); setForm({ code: '', name: '', type: '', capacity: '' }); setModal(true); };
+  const close = () => { if (!busy) { setModal(false); setErr(''); } };
+  const save = async () => {
+    if (!form.code.trim() || !form.name.trim()) { setErr('กรุณากรอกรหัสและชื่อคลัง'); return; }
+    setBusy(true); setErr('');
+    const r = await addLocation(form);
+    setBusy(false);
+    if (r && r.ok === false) { setErr(r.error || 'เกิดข้อผิดพลาด'); return; }
+    setModal(false);
+  };
+  const doDelete = async (loc) => {
+    if (!window.confirm(`ยืนยันลบคลัง "${loc.code} · ${loc.name}"?`)) return;
+    const r = await deleteLocation(loc.code);
+    if (r && r.ok === false) window.alert('ลบไม่สำเร็จ: ' + r.error);
+  };
+
   return (
     <div>
       <CardWrap style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ width: 44, height: 44, borderRadius: 12, background: '#eef3f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>🏭</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: '17px', fontWeight: 700, color: '#0d1b2e' }}>คลัง Nst นาหลวง</div>
-          <div style={{ fontSize: '13px', color: '#7b8fa3' }}>7 โซน · 2,560 หน่วยรวม</div>
+          <div style={{ fontSize: '13px', color: '#7b8fa3' }}>{locations.length} โซน · {totalUnits.toLocaleString('en-US')} หน่วยรวม</div>
         </div>
+        {canEdit && (
+          <button onClick={openAdd} style={{ padding: '9px 16px', background: BLUE, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>➕ เพิ่มคลัง</button>
+        )}
       </CardWrap>
 
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3, 1fr)', gap: 16 }}>
         {locations.map((loc, i) => {
-          const pct = Math.round(loc.used / loc.cap * 100);
+          const cap = Number(loc.capacity ?? loc.cap) || 0;
+          const used = Number(loc.used) || 0;
+          const pct = cap ? Math.round(used / cap * 100) : 0;
           return (
-            <CardWrap key={i} style={{ padding: '22px' }}>
+            <CardWrap key={loc.code || i} style={{ padding: '22px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                 <div>
                   <div style={{ fontSize: '18px', fontWeight: 800, color: loc.color, fontFamily: MONO }}>{loc.code}</div>
                   <div style={{ fontSize: '13px', fontWeight: 600, color: '#0d1b2e', marginTop: 2 }}>{loc.name}</div>
                 </div>
-                <span style={pill(loc.type, '#4a5d74', '#eef3f9', { fontSize: '11px' })}>{loc.type}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={pill(loc.type, '#4a5d74', '#eef3f9', { fontSize: '11px' })}>{loc.type}</span>
+                  {canEdit && <button onClick={() => doDelete(loc)} title="ลบคลัง" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', color: '#cbd5e1', padding: 0 }}>🗑</button>}
+                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: 5 }}>
-                <span style={{ color: '#7b8fa3', fontWeight: 600 }}>{loc.used} / {loc.cap}</span>
+                <span style={{ color: '#7b8fa3', fontWeight: 600 }}>{used} / {cap}</span>
                 <span style={{ fontWeight: 700, fontFamily: MONO, color: pct > 80 ? '#d97706' : '#0d1b2e' }}>{pct}%</span>
               </div>
               <div style={{ height: 8, background: '#eef3f9', borderRadius: 6, overflow: 'hidden', marginBottom: 10 }}>
@@ -700,6 +850,20 @@ function LocationsScreen({ locations, mobile }) {
           );
         })}
       </div>
+
+      {modal && (
+        <Modal title="เพิ่มคลัง / โซนจัดเก็บ" onClose={close}>
+          <RoiField label="รหัสคลัง (Code)" value={form.code} onChange={set('code')} type="text" hint="ห้ามซ้ำ เช่น D1, A3" />
+          <RoiField label="ชื่อคลัง" value={form.name} onChange={set('name')} type="text" hint="เช่น Zone D · แถว 1" />
+          <RoiField label="ประเภทสินค้า" value={form.type} onChange={set('type')} type="text" hint="เช่น แผงโซลาร์เซลล์" />
+          <RoiField label="ความจุ (Capacity)" value={form.capacity} onChange={set('capacity')} suffix="หน่วย" />
+          {err && <div style={{ color: RED, fontSize: '12.5px', marginBottom: 12, textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <button onClick={close} disabled={busy} style={{ flex: 1, padding: '11px', background: '#eef3f9', color: '#4a5d74', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+            <button onClick={save} disabled={busy} style={{ flex: 1, padding: '11px', background: BLUE, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer', opacity: busy ? .6 : 1 }}>{busy ? 'กำลังบันทึก…' : 'เพิ่มคลัง'}</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

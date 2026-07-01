@@ -150,18 +150,123 @@ export function useSupabaseData() {
     return survey;
   }, [dbConnected, loadAll]);
 
-  const updateProduct = useCallback(async (sku, updates) => {
+  const fail = (e) => ({ ok: false, error: (e && e.message) ? e.message : String(e) });
+  const OK = { ok: true };
+
+  // แก้ไขข้อมูลสินค้า (รับ field แบบ enriched: name, cat, unit, qty, min, max, loc, price)
+  const updateProduct = useCallback(async (sku, u) => {
     if (dbConnected) {
-      await supabase.from('products').update({
-        ...updates, updated_at: new Date().toISOString()
-      }).eq('sku', sku);
+      const d = {};
+      if (u.name != null) d.name = u.name;
+      if (u.cat != null) d.category = u.cat;
+      if (u.unit != null) d.unit = u.unit;
+      if (u.qty != null) d.qty = Number(u.qty);
+      if (u.min != null) d.min_qty = Number(u.min);
+      if (u.max != null) d.max_qty = Number(u.max);
+      if (u.loc != null) d.location = u.loc;
+      if (u.price != null) d.price = Number(u.price);
+      const { error } = await supabase.from('products').update({ ...d, updated_at: new Date().toISOString() }).eq('sku', sku);
+      if (error) return fail(error);
       await loadAll();
+    } else {
+      setProducts(prev => prev.map(p => p.sku === sku ? enrichProduct({
+        sku: p.sku, name: u.name ?? p.name, category: u.cat ?? p.cat, unit: u.unit ?? p.unit,
+        qty: u.qty != null ? Number(u.qty) : p.qty, min_qty: u.min != null ? Number(u.min) : p.min,
+        max_qty: u.max != null ? Number(u.max) : p.max, location: u.loc ?? p.loc,
+        price: u.price != null ? Number(u.price) : p.price
+      }) : p));
     }
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // เพิ่มสินค้าใหม่
+  const addProduct = useCallback(async (p) => {
+    const row = { sku: p.sku, name: p.name, category: p.cat, unit: p.unit || 'ชิ้น',
+      qty: Number(p.qty) || 0, min_qty: Number(p.min) || 0, max_qty: Number(p.max) || 0,
+      location: p.loc || '', price: Number(p.price) || 0 };
+    if (dbConnected) {
+      const { error } = await supabase.from('products').insert(row);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setProducts(prev => [...prev, enrichProduct(row)].sort((a, b) => a.sku.localeCompare(b.sku)));
+    }
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // ลบสินค้า (ลบประวัติเคลื่อนไหวที่อ้างถึงก่อน กัน FK)
+  const deleteProduct = useCallback(async (sku) => {
+    if (dbConnected) {
+      await supabase.from('movements').delete().eq('sku', sku);
+      const { error } = await supabase.from('products').delete().eq('sku', sku);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setProducts(prev => prev.filter(p => p.sku !== sku));
+    }
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // รับเข้า / จ่ายออก (ปรับสต็อก + บันทึกประวัติ)
+  const adjustStock = useCallback(async (sku, dir, qty, by) => {
+    const prod = products.find(p => p.sku === sku);
+    if (!prod) return fail('ไม่พบสินค้า');
+    const q = Number(qty);
+    if (!q || q <= 0) return fail('กรุณากรอกจำนวนให้ถูกต้อง');
+    if (dir === 'out' && q > prod.qty) return fail('สต็อกไม่พอ (คงเหลือ ' + prod.qty + ')');
+    const now = new Date();
+    const ref = (dir === 'in' ? 'GR' : 'GI') + '-' + String(now.getFullYear() + 543).slice(2) + '-' + Math.floor(1000 + Math.random() * 9000);
+    const timeLabel = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) + ' ' + now.toTimeString().slice(0, 5);
+    const newQty = prod.qty + (dir === 'in' ? q : -q);
+    if (dbConnected) {
+      const { error: e1 } = await supabase.from('movements').insert({
+        ref, direction: dir, time_label: timeLabel, sku, product_name: prod.name,
+        qty: q, location: prod.loc, created_by: by, doc: '—'
+      });
+      if (e1) return fail(e1);
+      const { error: e2 } = await supabase.from('products').update({ qty: newQty, updated_at: new Date().toISOString() }).eq('sku', sku);
+      if (e2) return fail(e2);
+      await loadAll();
+    } else {
+      setProducts(prev => prev.map(p => p.sku === sku ? enrichProduct({
+        sku: p.sku, name: p.name, category: p.cat, unit: p.unit, qty: newQty,
+        min_qty: p.min, max_qty: p.max, location: p.loc, price: p.price
+      }) : p));
+      setMovements(prev => [enrichMovement({ ref, dir, time: timeLabel, sku, name: prod.name, qty: q, loc: prod.loc, by, doc: '—' }), ...prev]);
+    }
+    return OK;
+  }, [dbConnected, products, loadAll]);
+
+  // เพิ่มคลัง / โซนจัดเก็บ
+  const addLocation = useCallback(async (l) => {
+    const row = { code: l.code, name: l.name, type: l.type || '', capacity: Number(l.capacity) || 0,
+      used: 0, items: 0, color: l.color || '#3b82f6' };
+    if (dbConnected) {
+      const { error } = await supabase.from('locations').insert(row);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setLocations(prev => [...prev, row]);
+    }
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // ลบคลัง
+  const deleteLocation = useCallback(async (code) => {
+    if (dbConnected) {
+      const { error } = await supabase.from('locations').delete().eq('code', code);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setLocations(prev => prev.filter(l => l.code !== code));
+    }
+    return OK;
   }, [dbConnected, loadAll]);
 
   return {
     products, locations, movements, customerGroups, users, surveys,
     loading, dbConnected, loadAll,
-    addMovement, addSurvey, updateProduct, setSurveys
+    addMovement, addSurvey, updateProduct, setSurveys,
+    addProduct, deleteProduct, adjustStock, addLocation, deleteLocation
   };
 }
