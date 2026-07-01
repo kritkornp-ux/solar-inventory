@@ -41,6 +41,7 @@ function enrichCustomerRows(rows) {
     const downPay = Number(c.down_payment ?? c.downPay) || 0;
     const creditAmt = Number(c.credit_amount ?? c.creditAmt) || 0;
     return {
+      id: c.id, statusKey: c.status || 'progress', month_group: c.month_group, month_label: c.month_label,
       idx: i + 1, name: c.name, amount, amountText: money(amount),
       type: c.payment_type || c.type, isCash, downPay, downText: money(downPay),
       creditAmt, creditText: creditAmt ? money(creditAmt) : '—',
@@ -270,6 +271,50 @@ export function useSupabaseData() {
     return OK;
   }, [dbConnected, loadAll]);
 
+  // แก้ไขข้อมูลลูกค้า
+  const updateCustomer = useCallback(async (id, u) => {
+    if (!dbConnected) return fail('ต้องเชื่อมต่อฐานข้อมูลก่อนจึงจะแก้ไขได้');
+    const d = {};
+    if (u.name != null) d.name = u.name;
+    if (u.amount != null) d.amount = Number(u.amount);
+    if (u.type != null) d.payment_type = u.type;
+    if (u.downPay != null) d.down_payment = Number(u.downPay);
+    if (u.creditAmt != null) d.credit_amount = Number(u.creditAmt);
+    if (u.outstanding != null) d.outstanding = Number(u.outstanding);
+    if (u.payDate != null) d.pay_date = u.payDate;
+    if (u.owner != null) d.owner = u.owner;
+    if (u.status != null) d.status = u.status;
+    if (u.note != null) d.note = u.note;
+    const { error } = await supabase.from('customers').update(d).eq('id', id);
+    if (error) return fail(error);
+    await loadAll();
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // ลบลูกค้า
+  const deleteCustomer = useCallback(async (id) => {
+    if (!dbConnected) return fail('ต้องเชื่อมต่อฐานข้อมูลก่อน');
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) return fail(error);
+    await loadAll();
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // เพิ่มลูกค้า (ระบุกลุ่มเดือน)
+  const addCustomer = useCallback(async (c) => {
+    if (!dbConnected) return fail('ต้องเชื่อมต่อฐานข้อมูลก่อน');
+    const { error } = await supabase.from('customers').insert({
+      month_group: c.month_group, month_label: c.month_label || c.month_group,
+      name: c.name, amount: Number(c.amount) || 0, payment_type: c.type || 'เงินสด',
+      down_payment: Number(c.downPay) || 0, credit_amount: Number(c.creditAmt) || 0,
+      outstanding: Number(c.outstanding) || 0, pay_date: c.payDate || '—',
+      owner: c.owner || '', status: c.status || 'progress', note: c.note || ''
+    });
+    if (error) return fail(error);
+    await loadAll();
+    return OK;
+  }, [dbConnected, loadAll]);
+
   // เปลี่ยนรหัสผ่าน (บันทึกลง app_users เพื่อให้ใช้ได้ทุกเครื่อง)
   const changePassword = useCallback(async (id, newPin) => {
     const u = users.find(x => x.id === id);
@@ -292,6 +337,6 @@ export function useSupabaseData() {
     loading, dbConnected, loadAll,
     addMovement, addSurvey, updateProduct, setSurveys,
     addProduct, deleteProduct, adjustStock, addLocation, deleteLocation,
-    changePassword
+    changePassword, updateCustomer, deleteCustomer, addCustomer
   };
 }

@@ -91,7 +91,7 @@ export default function App() {
     users, surveys, setSurveys, loading: dbLoading, dbConnected,
     addMovement, addSurvey, updateProduct,
     addProduct, deleteProduct, adjustStock, addLocation, deleteLocation,
-    changePassword
+    changePassword, updateCustomer, deleteCustomer, addCustomer
   } = useSupabaseData();
 
   const [pwModal, setPwModal] = useState(false);
@@ -282,7 +282,7 @@ export default function App() {
       case 'checklist': return <ChecklistScreen checks={checks} setChecks={setChecks} notes={notes} setNotes={setNotes} surveyCustomer={surveyCustomer} setSurveyCustomer={setSurveyCustomer} surveyor={surveyor} setSurveyor={setSurveyor} surveyDate={surveyDate} setSurveyDate={setSurveyDate} surveys={surveys} setSurveys={setSurveys} navigate={navigate} setJustSaved={setJustSaved} mobile={mobile} />;
       case 'roi': return <RoiScreen mobile={mobile} />;
       case 'surveyreport': return <SurveyReportScreen surveys={surveys} justSaved={justSaved} mobile={mobile} />;
-      case 'customers': return <CustomersScreen customerData={customerData} mobile={mobile} />;
+      case 'customers': return <CustomersScreen customerData={customerData} mobile={mobile} canEdit={canEdit} updateCustomer={updateCustomer} deleteCustomer={deleteCustomer} addCustomer={addCustomer} />;
       default: return null;
     }
   };
@@ -1314,13 +1314,68 @@ function SurveyReportScreen({ surveys, justSaved, mobile }) {
 /* ══════════════════════════════════════════════════════════════
    CUSTOMERS
    ══════════════════════════════════════════════════════════════ */
-function CustomersScreen({ customerData, mobile }) {
+const CUST_STATUS = [
+  { key: 'done', label: 'ปิดงาน' },
+  { key: 'progress', label: 'กำลังดำเนินการ' },
+  { key: 'issue', label: 'มีปัญหา' },
+];
+
+function CustomersScreen({ customerData, mobile, canEdit, updateCustomer, deleteCustomer, addCustomer }) {
   const allRows = customerData.flatMap(g => g.rows);
   const totalAmt = allRows.reduce((s, r) => s + r.amount, 0);
   const doneCount = allRows.filter(r => r.st.label === 'ปิดงาน').length;
   const issueCount = allRows.filter(r => r.st.label === 'มีปัญหา').length;
   const totalDown = allRows.reduce((s, r) => s + r.downPay, 0);
   const totalCredit = allRows.reduce((s, r) => s + r.creditAmt, 0);
+
+  const [modal, setModal] = useState(null); // 'edit' | 'add'
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
+
+  const openEdit = (r) => { setErr(''); setForm({ id: r.id, name: r.name, amount: String(r.amount), type: r.type, downPay: String(r.downPay), creditAmt: String(r.creditAmt), outstanding: String(r.outstanding), payDate: r.payDate === '—' ? '' : r.payDate, owner: r.owner, status: r.statusKey, note: r.note }); setModal('edit'); };
+  const openAdd = (group) => { setErr(''); setForm({ month_group: group.month, month_label: group.label, name: '', amount: '0', type: 'เงินสด', downPay: '0', creditAmt: '0', outstanding: '0', payDate: '', owner: '', status: 'progress', note: '' }); setModal('add'); };
+  const close = () => { if (!busy) { setModal(null); setErr(''); } };
+  const run = async (fn) => {
+    setBusy(true); setErr('');
+    const res = await fn();
+    setBusy(false);
+    if (res && res.ok === false) { setErr(res.error || 'เกิดข้อผิดพลาด'); return; }
+    setModal(null);
+  };
+  const saveEdit = () => { if (!form.name.trim()) { setErr('กรุณากรอกชื่อลูกค้า'); return; } run(() => updateCustomer(form.id, form)); };
+  const saveAdd = () => { if (!form.name.trim()) { setErr('กรุณากรอกชื่อลูกค้า'); return; } run(() => addCustomer(form)); };
+  const doDelete = (r) => { if (window.confirm(`ยืนยันลบลูกค้า "${r.name}"?`)) run(() => deleteCustomer(r.id)); };
+
+  const custForm = (
+    <>
+      <RoiField label="ชื่อลูกค้า" value={form.name} onChange={set('name')} type="text" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <RoiField label="ยอดรวม" value={form.amount} onChange={set('amount')} suffix="฿" />
+        <RoiField label="ประเภทชำระ" value={form.type} onChange={set('type')} type="text" hint="เงินสด / ICBC ฯลฯ" />
+        <RoiField label="เงินดาวน์" value={form.downPay} onChange={set('downPay')} suffix="฿" />
+        <RoiField label="สินเชื่อ" value={form.creditAmt} onChange={set('creditAmt')} suffix="฿" />
+        <RoiField label="ยอดคงค้าง" value={form.outstanding} onChange={set('outstanding')} suffix="฿" />
+        <RoiField label="วันที่จ่าย" value={form.payDate} onChange={set('payDate')} type="text" hint="เช่น 26/01/69" />
+      </div>
+      <RoiField label="เจ้าของงาน" value={form.owner} onChange={set('owner')} type="text" hint="เช่น พี่เบญ, พี่สีแก้ว" />
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#4a5d74', marginBottom: 6 }}>สถานะ</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {CUST_STATUS.map(s => (
+            <button key={s.key} onClick={() => set('status')(s.key)} style={{ flex: 1, padding: '9px', borderRadius: 9, border: '1.5px solid ' + (form.status === s.key ? BLUE : '#e6edf5'), background: form.status === s.key ? '#eff6ff' : '#fff', color: form.status === s.key ? BLUE : '#7b8fa3', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{s.label}</button>
+          ))}
+        </div>
+      </div>
+      <RoiField label="หมายเหตุ" value={form.note} onChange={set('note')} type="text" />
+      {err && <div style={{ color: RED, fontSize: '12.5px', marginBottom: 12, textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+        <button onClick={close} disabled={busy} style={{ flex: 1, padding: '11px', background: '#eef3f9', color: '#4a5d74', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+        <button onClick={modal === 'add' ? saveAdd : saveEdit} disabled={busy} style={{ flex: 1, padding: '11px', background: GREEN, color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 700, cursor: 'pointer', opacity: busy ? .6 : 1 }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+      </div>
+    </>
+  );
 
   const statCards = [
     { label: 'ยอดรวมทั้งหมด', value: money(totalAmt), color: BLUE, icon: '💰' },
@@ -1348,10 +1403,13 @@ function CustomersScreen({ customerData, mobile }) {
         <CardWrap key={gi} style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <div style={{ width: 6, height: 28, borderRadius: 3, background: BLUE }} />
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontSize: '16px', fontWeight: 700, color: '#0d1b2e' }}>{group.label}</div>
               <div style={{ fontSize: '12.5px', color: '#7b8fa3' }}>{group.month} · {group.rows.length} ราย</div>
             </div>
+            {canEdit && (
+              <button onClick={() => openAdd(group)} style={{ padding: '8px 14px', background: BLUE, color: '#fff', border: 'none', borderRadius: 9, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}>➕ เพิ่มลูกค้า</button>
+            )}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1360,10 +1418,11 @@ function CustomersScreen({ customerData, mobile }) {
                 <Th style={{ textAlign: 'right' }}>ดาวน์</Th><Th style={{ textAlign: 'right' }}>สินเชื่อ</Th>
                 <Th style={{ textAlign: 'right', color: '#d97706' }}>คงค้าง</Th>
                 <Th>วันจ่าย</Th><Th>เจ้าของ</Th><Th>สถานะ</Th>
+                {canEdit && <Th style={{ textAlign: 'right' }}>จัดการ</Th>}
               </tr></thead>
               <tbody>
                 {group.rows.map((r, i) => (
-                  <React.Fragment key={i}>
+                  <React.Fragment key={r.id || i}>
                     <tr>
                       <Td style={{ fontWeight: 600, color: '#7b8fa3' }}>{r.idx}</Td>
                       <Td style={{ fontWeight: 600 }}>{r.name}</Td>
@@ -1375,10 +1434,16 @@ function CustomersScreen({ customerData, mobile }) {
                       <Td style={{ fontSize: '12.5px', fontFamily: MONO }}>{r.payDate}</Td>
                       <Td><span style={r.ownerStyle}>{r.owner}</span></Td>
                       <Td><span style={r.statusStyle}>{r.st.label}</span></Td>
+                      {canEdit && (
+                        <Td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '15px', marginRight: 6 }}>✎</button>
+                          <button onClick={() => doDelete(r)} title="ลบ" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>🗑</button>
+                        </Td>
+                      )}
                     </tr>
                     {r.hasNote && (
                       <tr>
-                        <td colSpan={10} style={{ padding: '0 14px 10px 48px', fontSize: '12px', color: '#d97706', fontStyle: 'italic', borderBottom: '1px solid #f0f4f9' }}>
+                        <td colSpan={canEdit ? 11 : 10} style={{ padding: '0 14px 10px 48px', fontSize: '12px', color: '#d97706', fontStyle: 'italic', borderBottom: '1px solid #f0f4f9' }}>
                           📝 {r.note}
                         </td>
                       </tr>
@@ -1390,6 +1455,9 @@ function CustomersScreen({ customerData, mobile }) {
           </div>
         </CardWrap>
       ))}
+
+      {modal === 'edit' && <Modal title="แก้ไขข้อมูลลูกค้า" onClose={close}>{custForm}</Modal>}
+      {modal === 'add' && <Modal title={`เพิ่มลูกค้า · ${form.month_label || ''}`} onClose={close}>{custForm}</Modal>}
     </div>
   );
 }
