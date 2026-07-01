@@ -3,7 +3,7 @@ import React from 'react';
 export function Icon({ path, color = 'currentColor', size = 19 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      dangerouslySetInnerHTML={{ __html: path.replace(/CUR/g, color) }} />
+      dangerouslySetInnerHTML={{ __html: (path || '').replace(/CUR/g, color) }} />
   );
 }
 
@@ -19,6 +19,7 @@ export const navIcons = {
   checklist: '<rect x="4" y="3" width="16" height="18" rx="2" stroke="CUR" stroke-width="2"/><path d="M8.5 8.5l1.3 1.3 2.2-2.4M8.5 14.5l1.3 1.3 2.2-2.4" stroke="CUR" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.5 9h2.5M14.5 15h2.5" stroke="CUR" stroke-width="1.8" stroke-linecap="round"/>',
   surveyreport: '<path d="M9 3h6l1 3H8l1-3z" stroke="CUR" stroke-width="1.8" stroke-linejoin="round"/><rect x="4" y="6" width="16" height="15" rx="2" stroke="CUR" stroke-width="2"/><path d="M8 11h8M8 15h5" stroke="CUR" stroke-width="1.8" stroke-linecap="round"/>',
   customers: '<circle cx="12" cy="8" r="4" stroke="CUR" stroke-width="2"/><path d="M20 21a8 8 0 00-16 0" stroke="CUR" stroke-width="2" stroke-linecap="round"/>',
+  roi: '<circle cx="12" cy="12" r="9" stroke="CUR" stroke-width="2"/><path d="M8.5 15.5l7-7" stroke="CUR" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="9.5" r="1.3" fill="CUR"/><circle cx="14.5" cy="14.5" r="1.3" fill="CUR"/>',
 };
 
 export const arrowUpHtml = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M12 5v9m0 0l-3.5-3.5M12 14l3.5-3.5" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
