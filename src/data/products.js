@@ -119,6 +119,7 @@ export function getCustomers() {
 }
 
 export const users = [
+  { id: 'beer', name: 'ชนัญพงศ์ สันตยานนท์ (เบียร์)', role: 'ผู้จัดการ', dept: 'บริหาร', pin: 'Beer@2569', color: '#0f766e' },
   { id: 'aom', name: 'รังสิยา ธนาพงศ์ (ออม)', role: 'แอดมิน', dept: 'บริหารระบบ', pin: 'Aom@2569', color: '#2563eb' },
   { id: 'nun', name: 'จุฑามาศ จิตวิจารณ์ (นุ่น)', role: 'แอดมิน', dept: 'บริหารระบบ', pin: 'Nun@2569', color: '#7c3aed' },
   { id: 'sikaew', name: 'เพ็ชรินทร์ ณ ตะกั่วป่า (สีแก้ว)', role: 'พนักงานขาย', dept: 'ฝ่ายขาย', pin: 'Sikaew@2569', color: '#d97706' },
