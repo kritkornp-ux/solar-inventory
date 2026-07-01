@@ -1174,6 +1174,22 @@ function CustomersScreen({ customerData, mobile }) {
 /* ══════════════════════════════════════════════════════════════
    ROI · วิเคราะห์ความคุ้มค่าการลงทุนโซลาร์
    ══════════════════════════════════════════════════════════════ */
+function RoiField({ label, value, onChange, suffix, hint, type = 'number' }) {
+  const isNum = type === 'number';
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#4a5d74', marginBottom: 5 }}>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <input type={type} inputMode={isNum ? 'decimal' : 'text'} step={isNum ? 'any' : undefined} value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ width: '100%', padding: '11px 44px 11px 14px', border: '1.5px solid #e6edf5', borderRadius: 10, fontSize: '15px', fontFamily: isNum ? MONO : FONT, fontWeight: 600, color: '#0d1b2e', boxSizing: 'border-box', background: '#f6f9fc' }} />
+        {suffix && <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#9aabbf', fontWeight: 600 }}>{suffix}</span>}
+      </div>
+      {hint && <div style={{ fontSize: '11px', color: '#9aabbf', marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
+
 function RoiScreen({ mobile }) {
   const [sizeKw, setSizeKw]       = useState('10');
   const [pricePerKw, setPricePerKw] = useState('32000');
@@ -1219,19 +1235,6 @@ function RoiScreen({ mobile }) {
   const fmt0 = (n) => Math.round(n).toLocaleString('en-US');
   const fmt1 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-  const Field = ({ label, value, onChange, suffix, hint, step }) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#4a5d74', marginBottom: 5 }}>{label}</label>
-      <div style={{ position: 'relative' }}>
-        <input type="number" inputMode="decimal" step={step || 'any'} value={value}
-          onChange={e => onChange(e.target.value)}
-          style={{ width: '100%', padding: '11px 44px 11px 14px', border: '1.5px solid #e6edf5', borderRadius: 10, fontSize: '15px', fontFamily: MONO, fontWeight: 600, color: '#0d1b2e', boxSizing: 'border-box', background: '#f6f9fc' }} />
-        {suffix && <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#9aabbf', fontWeight: 600 }}>{suffix}</span>}
-      </div>
-      {hint && <div style={{ fontSize: '11px', color: '#9aabbf', marginTop: 4 }}>{hint}</div>}
-    </div>
-  );
-
   const kpis = [
     { label: 'ประหยัดค่าไฟ/เดือน', value: money(Math.round(saveYr1 / 12)), sub: 'ปีแรก', color: GREEN, icon: '💡' },
     { label: 'ระยะคืนทุน', value: paybackYr ? fmt1(paybackYr) + ' ปี' : '—', sub: 'จุดคุ้มทุน', color: BLUE, icon: '⏳' },
@@ -1246,13 +1249,13 @@ function RoiScreen({ mobile }) {
       {/* ── ฟอร์มกรอกข้อมูล ── */}
       <CardWrap>
         <div style={{ fontSize: '15px', fontWeight: 700, color: '#0d1b2e', marginBottom: 18 }}>ข้อมูลระบบโซลาร์</div>
-        <Field label="ชื่อลูกค้า / โครงการ" value={custName} onChange={setCustName} />
-        <Field label="ขนาดระบบ" value={sizeKw} onChange={setSizeKw} suffix="kW" hint={`≈ ${panels} แผง (${PANEL_W}W)`} />
-        <Field label="ราคาต่อ kW" value={pricePerKw} onChange={setPricePerKw} suffix="บาท" hint="ทั่วไป 25,000–40,000 บาท/kW" />
-        <Field label="ชั่วโมงแดดเฉลี่ย/วัน" value={sunHours} onChange={setSunHours} suffix="ชม." hint="ภาคใต้ ≈ 4.0–4.5 ชม." />
-        <Field label="ค่าไฟต่อหน่วย" value={rate} onChange={setRate} suffix="บาท" hint="ค่าไฟ + Ft ปัจจุบัน" />
-        <Field label="สัดส่วนใช้ไฟที่ผลิต" value={selfUse} onChange={setSelfUse} suffix="%" hint="ไฟที่ผลิตแล้วได้ใช้จริง" />
-        <Field label="ค่าไฟปรับขึ้นต่อปี" value={inflation} onChange={setInflation} suffix="%" hint="เฉลี่ยย้อนหลัง ≈ 3%/ปี" />
+        <RoiField label="ชื่อลูกค้า / โครงการ" value={custName} onChange={setCustName} type="text" />
+        <RoiField label="ขนาดระบบ" value={sizeKw} onChange={setSizeKw} suffix="kW" hint={`≈ ${panels} แผง (${PANEL_W}W)`} />
+        <RoiField label="ราคาต่อ kW" value={pricePerKw} onChange={setPricePerKw} suffix="บาท" hint="ทั่วไป 25,000–40,000 บาท/kW" />
+        <RoiField label="ชั่วโมงแดดเฉลี่ย/วัน" value={sunHours} onChange={setSunHours} suffix="ชม." hint="ภาคใต้ ≈ 4.0–4.5 ชม." />
+        <RoiField label="ค่าไฟต่อหน่วย" value={rate} onChange={setRate} suffix="บาท" hint="ค่าไฟ + Ft ปัจจุบัน" />
+        <RoiField label="สัดส่วนใช้ไฟที่ผลิต" value={selfUse} onChange={setSelfUse} suffix="%" hint="ไฟที่ผลิตแล้วได้ใช้จริง" />
+        <RoiField label="ค่าไฟปรับขึ้นต่อปี" value={inflation} onChange={setInflation} suffix="%" hint="เฉลี่ยย้อนหลัง ≈ 3%/ปี" />
         <div style={{ marginTop: 8, padding: '12px 14px', background: '#f0f7ff', borderRadius: 10, fontSize: '12px', color: '#4a5d74', lineHeight: 1.6 }}>
           💡 คำนวณอายุระบบ {LIFESPAN} ปี · แผงเสื่อมสภาพ 0.5%/ปี · ลด CO₂ ≈ <b>{fmt1(co2Ton)} ตัน/ปี</b>
         </div>
