@@ -67,12 +67,11 @@ export function useSupabaseData() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [pRes, lRes, mRes, cRes, uRes, sRes] = await Promise.all([
+      const [pRes, lRes, mRes, cRes, sRes] = await Promise.all([
         supabase.from('products').select('*').order('sku'),
         supabase.from('locations').select('*').order('code'),
         supabase.from('movements').select('*').order('id', { ascending: false }),
         supabase.from('customers').select('*').order('id'),
-        supabase.from('app_users').select('*').order('id'),
         supabase.from('surveys').select('*').order('created_at', { ascending: false }),
       ]);
 
@@ -93,9 +92,8 @@ export function useSupabaseData() {
         ...g, rows: enrichCustomerRows(g.rows)
       })));
 
-      if (uRes.data?.length) setUsers(uRes.data.map(u => ({
-        id: u.id, name: u.name, role: u.role, dept: u.dept, pin: u.pin, color: u.color
-      })));
+      // รายชื่อผู้ใช้/รหัสเข้าระบบ ใช้จากในโค้ด (mockUsers) เสมอ ไม่ดึงจาก DB
+      // เพื่อให้ควบคุมบัญชีพนักงานได้จากโค้ดโดยตรง
 
       if (sRes.data?.length) setSurveys(sRes.data.map(s => ({
         id: s.id, customer: s.customer, surveyor: s.surveyor, date: s.survey_date,
