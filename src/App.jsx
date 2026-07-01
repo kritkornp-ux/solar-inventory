@@ -333,22 +333,29 @@ export default function App() {
    DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 function DashboardScreen({ products, movements, mobile }) {
+  const totalValue = products.reduce((s, p) => s + (p.value || 0), 0);
+  const valueText = totalValue >= 1e6 ? '฿' + (totalValue / 1e6).toFixed(2) + 'M' : money(totalValue);
+  const lowCount = products.filter(p => p.st.key === 'low' || p.st.key === 'out').length;
+  const outCount = products.filter(p => p.st.key === 'out').length;
+  const inMoves = movements.filter(m => m.isIn).length;
+  const outMoves = movements.length - inMoves;
+
   const kpis = [
-    { label: 'มูลค่าสต็อกรวม', value: '฿8.42M', sub: '+12% จากเดือนก่อน', color: BLUE, icon: '📦' },
-    { label: 'จำนวน SKU', value: '128', sub: 'รายการทั้งหมด', color: '#7c3aed', icon: '🏷️' },
-    { label: 'สินค้าใกล้หมด', value: '7', sub: 'ต่ำกว่า Min', color: '#d97706', icon: '⚠️' },
-    { label: 'รับเข้า / จ่ายออก', value: '42 / 31', sub: 'เดือนนี้', color: GREEN, icon: '🔄' },
-    { label: 'รอดำเนินการ', value: '5', sub: 'ใบเบิก/ใบรับ', color: RED, icon: '📋' },
+    { label: 'มูลค่าสต็อกรวม', value: valueText, sub: products.length + ' รายการ', color: BLUE, icon: '📦' },
+    { label: 'จำนวน SKU', value: String(products.length), sub: 'รายการทั้งหมด', color: '#7c3aed', icon: '🏷️' },
+    { label: 'สินค้าใกล้หมด', value: String(lowCount), sub: 'ต่ำกว่า Min', color: '#d97706', icon: '⚠️' },
+    { label: 'รับเข้า / จ่ายออก', value: inMoves + ' / ' + outMoves, sub: 'รายการทั้งหมด', color: GREEN, icon: '🔄' },
+    { label: 'หมดสต็อก', value: String(outCount), sub: 'ต้องสั่งเพิ่ม', color: RED, icon: '📋' },
   ];
 
-  const cats = [
-    { label: 'แผงโซล่าร์เซลล์', val: 1056, max: 1200, color: '#3b82f6' },
-    { label: 'อินเวอร์เตอร์', val: 24, max: 160, color: '#8b5cf6' },
-    { label: 'แบตเตอรี่', val: 0, max: 70, color: '#22c55e' },
-    { label: 'สมาร์ทมิเตอร์', val: 5, max: 120, color: '#06b6d4' },
-    { label: 'เบรกเกอร์', val: 5, max: 50, color: '#f59e0b' },
-    { label: 'อุปกรณ์อื่นๆ', val: 6, max: 60, color: '#ec4899' },
-  ];
+  const palette = ['#3b82f6', '#8b5cf6', '#22c55e', '#06b6d4', '#f59e0b', '#ec4899', '#14b8a6', '#ef4444'];
+  const catMap = {};
+  products.forEach(p => {
+    if (!catMap[p.cat]) catMap[p.cat] = { val: 0, max: 0 };
+    catMap[p.cat].val += p.qty;
+    catMap[p.cat].max += p.max;
+  });
+  const cats = Object.entries(catMap).map(([label, v], i) => ({ label, val: v.val, max: v.max || 1, color: palette[i % palette.length] }));
 
   const lowStock = products.filter(p => p.st.key === 'low' || p.st.key === 'out').slice(0, 4);
   const recentMov = movements.slice(0, 5);
