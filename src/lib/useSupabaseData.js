@@ -125,37 +125,21 @@ export function useSupabaseData() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const addMovement = useCallback(async (movement) => {
-    if (dbConnected) {
-      const { error } = await supabase.from('movements').insert({
-        ref: movement.ref, direction: movement.dir, time_label: movement.time,
-        sku: movement.sku, product_name: movement.name, qty: movement.qty,
-        location: movement.loc, created_by: movement.by, doc: movement.doc || '—'
-      });
-      if (!error) {
-        const qtyChange = movement.dir === 'in' ? movement.qty : -movement.qty;
-        await supabase.from('products').update({
-          qty: (products.find(p => p.sku === movement.sku)?.qty || 0) + qtyChange,
-          updated_at: new Date().toISOString()
-        }).eq('sku', movement.sku);
-        await loadAll();
-      }
-    }
-    return enrichMovement(movement);
-  }, [dbConnected, products, loadAll]);
-
   const addSurvey = useCallback(async (survey) => {
     if (dbConnected) {
-      await supabase.from('surveys').insert({
+      const { error } = await supabase.from('surveys').insert({
         id: survey.id, customer: survey.customer, surveyor: survey.surveyor,
         survey_date: survey.date, roof: survey.roof || '', azimuth: survey.azimuth || '',
         size_kw: survey.sizeKw || 0, panels: survey.panels || 0,
         done: survey.done, total: survey.total, status: survey.status,
         notes: survey.notes || {}, checks: survey.checks || {}
       });
+      if (error) return { ok: false, error: error.message || String(error) };
       await loadAll();
+    } else {
+      setSurveys(prev => [survey, ...prev]);
     }
-    return survey;
+    return { ok: true };
   }, [dbConnected, loadAll]);
 
   const fail = (e) => ({ ok: false, error: (e && e.message) ? e.message : String(e) });
@@ -315,6 +299,30 @@ export function useSupabaseData() {
     return OK;
   }, [dbConnected, loadAll]);
 
+  // แก้ไขสถานะ/ข้อมูลผลสำรวจ
+  const updateSurvey = useCallback(async (id, u) => {
+    if (dbConnected) {
+      const { error } = await supabase.from('surveys').update(u).eq('id', id);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setSurveys(prev => prev.map(s => s.id === id ? { ...s, ...u } : s));
+    }
+    return OK;
+  }, [dbConnected, loadAll]);
+
+  // ลบผลสำรวจ
+  const deleteSurvey = useCallback(async (id) => {
+    if (dbConnected) {
+      const { error } = await supabase.from('surveys').delete().eq('id', id);
+      if (error) return fail(error);
+      await loadAll();
+    } else {
+      setSurveys(prev => prev.filter(s => s.id !== id));
+    }
+    return OK;
+  }, [dbConnected, loadAll]);
+
   // เปลี่ยนรหัสผ่าน (บันทึกลง app_users เพื่อให้ใช้ได้ทุกเครื่อง)
   const changePassword = useCallback(async (id, newPin) => {
     const u = users.find(x => x.id === id);
@@ -335,8 +343,9 @@ export function useSupabaseData() {
   return {
     products, locations, movements, customerGroups, users: effectiveUsers, surveys,
     loading, dbConnected, loadAll,
-    addMovement, addSurvey, updateProduct, setSurveys,
+    addSurvey, updateProduct, setSurveys,
     addProduct, deleteProduct, adjustStock, addLocation, deleteLocation,
-    changePassword, updateCustomer, deleteCustomer, addCustomer
+    changePassword, updateCustomer, deleteCustomer, addCustomer,
+    updateSurvey, deleteSurvey
   };
 }

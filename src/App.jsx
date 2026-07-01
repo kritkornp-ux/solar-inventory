@@ -89,9 +89,10 @@ export default function App() {
   const {
     products, locations, movements, customerGroups: customerData,
     users, surveys, setSurveys, loading: dbLoading, dbConnected,
-    addMovement, addSurvey, updateProduct,
+    addSurvey, updateProduct,
     addProduct, deleteProduct, adjustStock, addLocation, deleteLocation,
-    changePassword, updateCustomer, deleteCustomer, addCustomer
+    changePassword, updateCustomer, deleteCustomer, addCustomer,
+    updateSurvey, deleteSurvey
   } = useSupabaseData();
 
   const [pwModal, setPwModal] = useState(false);
@@ -272,16 +273,16 @@ export default function App() {
   const renderScreen = () => {
     switch (screen) {
       case 'dashboard': return <DashboardScreen products={products} movements={movements} mobile={mobile} />;
-      case 'receiving': return <ReceivingScreen mobile={mobile} />;
-      case 'issue': return <IssueScreen mobile={mobile} />;
+      case 'receiving': return <ReceivingScreen products={products} movements={movements} mobile={mobile} canEdit={canEdit} user={user} adjustStock={adjustStock} />;
+      case 'issue': return <IssueScreen products={products} movements={movements} mobile={mobile} canEdit={canEdit} user={user} adjustStock={adjustStock} />;
       case 'items': return <ItemsScreen products={products} movements={movements} locations={locations} selectedSku={selectedSku} setSelectedSku={setSelectedSku} catFilter={catFilter} setCatFilter={setCatFilter} mobile={mobile} canEdit={canEdit} user={user} updateProduct={updateProduct} addProduct={addProduct} deleteProduct={deleteProduct} adjustStock={adjustStock} />;
       case 'locations': return <LocationsScreen locations={locations} mobile={mobile} canEdit={canEdit} addLocation={addLocation} deleteLocation={deleteLocation} />;
-      case 'sales': return <SalesScreen products={products} cart={cart} setCart={setCart} mobile={mobile} />;
+      case 'sales': return <SalesScreen products={products} cart={cart} setCart={setCart} mobile={mobile} user={user} adjustStock={adjustStock} />;
       case 'stockreport': return <StockReportScreen products={products} mobile={mobile} />;
       case 'movereport': return <MoveReportScreen movements={movements} moveFilter={moveFilter} setMoveFilter={setMoveFilter} mobile={mobile} />;
-      case 'checklist': return <ChecklistScreen checks={checks} setChecks={setChecks} notes={notes} setNotes={setNotes} surveyCustomer={surveyCustomer} setSurveyCustomer={setSurveyCustomer} surveyor={surveyor} setSurveyor={setSurveyor} surveyDate={surveyDate} setSurveyDate={setSurveyDate} surveys={surveys} setSurveys={setSurveys} navigate={navigate} setJustSaved={setJustSaved} mobile={mobile} />;
+      case 'checklist': return <ChecklistScreen checks={checks} setChecks={setChecks} notes={notes} setNotes={setNotes} surveyCustomer={surveyCustomer} setSurveyCustomer={setSurveyCustomer} surveyor={surveyor} setSurveyor={setSurveyor} surveyDate={surveyDate} setSurveyDate={setSurveyDate} surveys={surveys} addSurvey={addSurvey} navigate={navigate} setJustSaved={setJustSaved} mobile={mobile} />;
       case 'roi': return <RoiScreen mobile={mobile} />;
-      case 'surveyreport': return <SurveyReportScreen surveys={surveys} justSaved={justSaved} mobile={mobile} />;
+      case 'surveyreport': return <SurveyReportScreen surveys={surveys} justSaved={justSaved} mobile={mobile} canEdit={canEdit} updateSurvey={updateSurvey} deleteSurvey={deleteSurvey} />;
       case 'customers': return <CustomersScreen customerData={customerData} mobile={mobile} canEdit={canEdit} updateCustomer={updateCustomer} deleteCustomer={deleteCustomer} addCustomer={addCustomer} />;
       default: return null;
     }
@@ -453,78 +454,89 @@ function DashboardScreen({ products, movements, mobile }) {
 /* ══════════════════════════════════════════════════════════════
    GOODS RECEIVING
    ══════════════════════════════════════════════════════════════ */
-function ReceivingScreen({ mobile }) {
-  const lines = [
-    { sku: 'PNL-LG650', name: 'แผงโซล่าร์ Longi 650W', qty: 720, unit: 'แผง', loc: 'A1-03' },
-    { sku: 'BAT-LVT16', name: 'แบตเตอรี่ LVTOPSUN 314A (16kWh)', qty: 8, unit: 'ก้อน', loc: 'B1-04' },
-    { sku: 'INV-HW5K', name: 'Huawei SUN2000-5KTL-LB0 (5kW)', qty: 6, unit: 'เครื่อง', loc: 'B2-01' },
-  ];
-  const recent = [
-    { ref: 'GR-2569-0142', date: '13 มิ.ย. 2569', items: 2, status: 'done' },
-    { ref: 'GR-2569-0141', date: '11 มิ.ย. 2569', items: 1, status: 'done' },
-    { ref: 'GR-2569-0140', date: '09 พ.ค. 2569', items: 3, status: 'done' },
-  ];
+function StockMoveScreen({ dir, products, movements, mobile, canEdit, user, adjustStock }) {
+  const isIn = dir === 'in';
+  const [sku, setSku] = useState('');
+  const [qty, setQty] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+
+  const selected = products.find(p => p.sku === sku);
+  const relevant = movements.filter(m => m.isIn === isIn);
+  const todayCount = relevant.length;
+  const recent = relevant.slice(0, 5);
+
+  const submit = async () => {
+    setErr(''); setOk('');
+    if (!sku) { setErr('กรุณาเลือกสินค้า'); return; }
+    const q = Number(qty);
+    if (!q || q <= 0) { setErr('กรุณากรอกจำนวนให้ถูกต้อง'); return; }
+    if (!isIn && selected && q > selected.qty) { setErr('สต็อกไม่พอ (คงเหลือ ' + selected.qty + ' ' + selected.unit + ')'); return; }
+    setBusy(true);
+    const r = await adjustStock(sku, dir, q, user && user.name ? user.name : 'ระบบ');
+    setBusy(false);
+    if (r && r.ok === false) { setErr(r.error || 'บันทึกไม่สำเร็จ'); return; }
+    setOk(`บันทึก${isIn ? 'รับเข้า' : 'จ่ายออก'} ${selected.name} จำนวน ${q} ${selected.unit} สำเร็จ`);
+    setSku(''); setQty('');
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 340px', gap: 24, alignItems: 'flex-start' }}>
       <div>
-        <CardWrap style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0d1b2e', marginBottom: 20 }}>ใบรับสินค้าเข้า</div>
-          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 20 }}>
-            {[
-              { label: 'เลขที่เอกสาร', val: 'GR-2569-0143' },
-              { label: 'วันที่', val: '20 มิ.ย. 2569' },
-              { label: 'เลขที่ PO', val: 'PO-2569-0088' },
-              { label: 'ผู้จำหน่าย', val: 'บ้านพลังงาน จำกัด' },
-            ].map((f, i) => (
-              <div key={i}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#7b8fa3', marginBottom: 4 }}>{f.label}</label>
-                <input readOnly value={f.val} style={{ width: '100%', padding: '10px 14px', border: '1px solid #e6edf5', borderRadius: 10, fontSize: '13.5px', background: '#f6f9fc', fontFamily: f.label === 'เลขที่เอกสาร' ? MONO : 'inherit' }} />
-              </div>
-            ))}
-          </div>
-        </CardWrap>
-
         <CardWrap>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0d1b2e', marginBottom: 14 }}>รายการสินค้า</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>
-                <Th>SKU</Th><Th>สินค้า</Th><Th>จำนวน</Th><Th>หน่วย</Th><Th>ตำแหน่ง</Th>
-              </tr></thead>
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={i}>
-                    <Td style={{ fontFamily: MONO, fontSize: '12.5px', fontWeight: 600, color: BLUE }}>{l.sku}</Td>
-                    <Td style={{ fontWeight: 600 }}>{l.name}</Td>
-                    <Td><span style={{ fontFamily: MONO, fontWeight: 700, color: GREEN }}>+{l.qty}</span></Td>
-                    <Td>{l.unit}</Td>
-                    <Td><span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: 7, background: '#eef3f9', color: '#4a5d74' }}>{l.loc}</span></Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0d1b2e', marginBottom: 4 }}>{isIn ? 'บันทึกรับสินค้าเข้า' : 'บันทึกจ่ายสินค้าออก'}</div>
+          {!canEdit ? (
+            <div style={{ marginTop: 16, fontSize: '12.5px', color: '#9aabbf', textAlign: 'center', background: '#f6f9fc', padding: '14px', borderRadius: 10 }}>
+              👁 โหมดดูอย่างเดียว — เฉพาะเจ้าของ/ผู้จัดการ/แอดมิน บันทึกรายการได้
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: '12.5px', color: '#7b8fa3', marginBottom: 18 }}>เลือกสินค้าจากคลังจริง แล้วกรอกจำนวนเพื่อบันทึก</div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#4a5d74', marginBottom: 5 }}>สินค้า</label>
+                <select value={sku} onChange={e => { setSku(e.target.value); setErr(''); setOk(''); }}
+                  style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e6edf5', borderRadius: 10, fontSize: '13.5px', background: '#f6f9fc', color: '#0d1b2e' }}>
+                  <option value="">— เลือกสินค้า —</option>
+                  {products.map(p => <option key={p.sku} value={p.sku}>{p.sku} · {p.name} (คงเหลือ {p.qty} {p.unit})</option>)}
+                </select>
+              </div>
+              {selected && (
+                <div style={{ background: '#f6f9fc', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                  <div style={{ fontSize: '12px', color: '#7b8fa3' }}>ตำแหน่ง: <b style={{ color: '#0d1b2e' }}>{selected.loc}</b> · คงเหลือ: <b style={{ fontFamily: MONO, color: '#0d1b2e' }}>{selected.qty}</b> {selected.unit}</div>
+                </div>
+              )}
+              <RoiField label={isIn ? 'จำนวนรับเข้า' : 'จำนวนจ่ายออก'} value={qty} onChange={setQty} suffix={selected ? selected.unit : ''} />
+              {err && <div style={{ color: RED, fontSize: '12.5px', marginBottom: 12, textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+              {ok && <div style={{ color: GREEN, fontSize: '12.5px', marginBottom: 12, textAlign: 'center', background: '#dcfce7', padding: '8px', borderRadius: 8 }}>✅ {ok}</div>}
+              <button onClick={submit} disabled={busy}
+                style={{ width: '100%', padding: '13px', background: isIn ? GREEN : RED, color: '#fff', border: 'none', borderRadius: 12, fontSize: '14px', fontWeight: 700, cursor: 'pointer', opacity: busy ? .6 : 1 }}>
+                {busy ? 'กำลังบันทึก…' : (isIn ? 'ยืนยันรับเข้า' : 'ยืนยันจ่ายออก')}
+              </button>
+            </>
+          )}
         </CardWrap>
       </div>
 
       {/* Right sidebar */}
       <div>
-        <div style={{ background: 'linear-gradient(135deg, #0d1b2e, #162d4a)', borderRadius: 16, padding: 24, color: '#fff', marginBottom: 16 }}>
-          <div style={{ fontSize: '13px', color: 'rgba(255,255,255,.5)', marginBottom: 4 }}>รับเข้าวันนี้</div>
-          <div style={{ fontSize: '36px', fontWeight: 800, fontFamily: MONO }}>42</div>
+        <div style={{ background: isIn ? 'linear-gradient(135deg, #0d1b2e, #162d4a)' : 'linear-gradient(135deg, #2d0a0a, #4a1010)', borderRadius: 16, padding: 24, color: '#fff', marginBottom: 16 }}>
+          <div style={{ fontSize: '13px', color: 'rgba(255,255,255,.5)', marginBottom: 4 }}>{isIn ? 'รับเข้าทั้งหมด' : 'จ่ายออกทั้งหมด'}</div>
+          <div style={{ fontSize: '36px', fontWeight: 800, fontFamily: MONO }}>{todayCount}</div>
           <div style={{ fontSize: '12px', color: 'rgba(255,255,255,.45)' }}>รายการ</div>
         </div>
 
         <CardWrap>
           <div style={{ fontSize: '14px', fontWeight: 700, color: '#0d1b2e', marginBottom: 14 }}>รายการล่าสุด</div>
-          {recent.map((r, i) => (
+          {recent.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: '#9aabbf', fontSize: '12.5px' }}>ยังไม่มีรายการ</div>
+          ) : recent.map((r, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < recent.length - 1 ? '1px solid #f0f4f9' : 'none' }}>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: MONO, color: BLUE }}>{r.ref}</div>
-                <div style={{ fontSize: '11.5px', color: '#7b8fa3' }}>{r.date} · {r.items} รายการ</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: MONO, color: isIn ? BLUE : RED }}>{r.ref}</div>
+                <div style={{ fontSize: '11.5px', color: '#7b8fa3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name} · {r.time}</div>
               </div>
-              <span style={pill('เสร็จสิ้น', '#15803d', '#dcfce7')}>เสร็จสิ้น</span>
+              <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: MONO, color: r.fg, flexShrink: 0, marginLeft: 8 }}>{r.qtyText}</span>
             </div>
           ))}
         </CardWrap>
@@ -533,88 +545,8 @@ function ReceivingScreen({ mobile }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════
-   GOODS ISSUE
-   ══════════════════════════════════════════════════════════════ */
-function IssueScreen({ mobile }) {
-  const lines = [
-    { sku: 'INV-SL6K', name: 'Solis S6-EH1P6K-L-PLUS (6kW)', qty: 2, unit: 'เครื่อง', loc: 'B2-08' },
-    { sku: 'INV-SL10K', name: 'Solis S6-EH1P10K-L-PLUS (10kW)', qty: 2, unit: 'เครื่อง', loc: 'B2-07' },
-    { sku: 'PNL-LG650', name: 'แผงโซล่าร์ Longi 650W', qty: 96, unit: 'แผง', loc: 'A1-03' },
-  ];
-  const recent = [
-    { ref: 'GI-2569-0098', date: '23 พ.ค. 2569', items: 2, status: 'done' },
-    { ref: 'GI-2569-0097', date: '21 พ.ค. 2569', items: 1, status: 'done' },
-    { ref: 'GI-2569-0096', date: '15 พ.ค. 2569', items: 3, status: 'done' },
-  ];
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 340px', gap: 24, alignItems: 'flex-start' }}>
-      <div>
-        <CardWrap style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0d1b2e', marginBottom: 20 }}>ใบจ่ายสินค้าออก</div>
-          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 20 }}>
-            {[
-              { label: 'เลขที่เอกสาร', val: 'GI-2569-0099' },
-              { label: 'วันที่', val: '20 มิ.ย. 2569' },
-              { label: 'เลขที่ SO', val: 'SO-2569-0055' },
-              { label: 'โครงการ / ลูกค้า', val: 'คุณสุภาวดี (ภูเก็ต)' },
-            ].map((f, i) => (
-              <div key={i}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#7b8fa3', marginBottom: 4 }}>{f.label}</label>
-                <input readOnly value={f.val} style={{ width: '100%', padding: '10px 14px', border: '1px solid #e6edf5', borderRadius: 10, fontSize: '13.5px', background: '#f6f9fc', fontFamily: f.label === 'เลขที่เอกสาร' ? MONO : 'inherit' }} />
-              </div>
-            ))}
-          </div>
-        </CardWrap>
-
-        <CardWrap>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0d1b2e', marginBottom: 14 }}>รายการสินค้า</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>
-                <Th>SKU</Th><Th>สินค้า</Th><Th>จำนวน</Th><Th>หน่วย</Th><Th>ตำแหน่ง</Th>
-              </tr></thead>
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={i}>
-                    <Td style={{ fontFamily: MONO, fontSize: '12.5px', fontWeight: 600, color: BLUE }}>{l.sku}</Td>
-                    <Td style={{ fontWeight: 600 }}>{l.name}</Td>
-                    <Td><span style={{ fontFamily: MONO, fontWeight: 700, color: RED }}>−{l.qty}</span></Td>
-                    <Td>{l.unit}</Td>
-                    <Td><span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: 7, background: '#eef3f9', color: '#4a5d74' }}>{l.loc}</span></Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardWrap>
-      </div>
-
-      {/* Right sidebar */}
-      <div>
-        <div style={{ background: 'linear-gradient(135deg, #2d0a0a, #4a1010)', borderRadius: 16, padding: 24, color: '#fff', marginBottom: 16 }}>
-          <div style={{ fontSize: '13px', color: 'rgba(255,255,255,.5)', marginBottom: 4 }}>จ่ายออกวันนี้</div>
-          <div style={{ fontSize: '36px', fontWeight: 800, fontFamily: MONO }}>31</div>
-          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,.45)' }}>รายการ</div>
-        </div>
-
-        <CardWrap>
-          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0d1b2e', marginBottom: 14 }}>รายการล่าสุด</div>
-          {recent.map((r, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < recent.length - 1 ? '1px solid #f0f4f9' : 'none' }}>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: MONO, color: RED }}>{r.ref}</div>
-                <div style={{ fontSize: '11.5px', color: '#7b8fa3' }}>{r.date} · {r.items} รายการ</div>
-              </div>
-              <span style={pill('เสร็จสิ้น', '#15803d', '#dcfce7')}>เสร็จสิ้น</span>
-            </div>
-          ))}
-        </CardWrap>
-      </div>
-    </div>
-  );
-}
+function ReceivingScreen(props) { return <StockMoveScreen dir="in" {...props} />; }
+function IssueScreen(props) { return <StockMoveScreen dir="out" {...props} />; }
 
 /* ══════════════════════════════════════════════════════════════
    ITEMS & STOCK
@@ -930,10 +862,21 @@ function LocationsScreen({ locations, mobile, canEdit, addLocation, deleteLocati
 /* ══════════════════════════════════════════════════════════════
    SALES ORDER
    ══════════════════════════════════════════════════════════════ */
-function SalesScreen({ products, cart, setCart, mobile }) {
-  const addToCart = (sku) => setCart(c => ({ ...c, [sku]: (c[sku] || 0) + 1 }));
+function SalesScreen({ products, cart, setCart, mobile, user, adjustStock }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+
+  const addToCart = (sku) => setCart(c => {
+    const p = products.find(x => x.sku === sku);
+    const n = (c[sku] || 0) + 1;
+    if (p && n > p.qty) return c;
+    return { ...c, [sku]: n };
+  });
   const changeQty = (sku, delta) => setCart(c => {
-    const n = (c[sku] || 0) + delta;
+    const p = products.find(x => x.sku === sku);
+    let n = (c[sku] || 0) + delta;
+    if (p && n > p.qty) n = p.qty;
     if (n <= 0) { const { [sku]: _, ...rest } = c; return rest; }
     return { ...c, [sku]: n };
   });
@@ -946,6 +889,23 @@ function SalesScreen({ products, cart, setCart, mobile }) {
   const subtotal = cartItems.reduce((s, x) => s + x.lineTotal, 0);
   const vat = Math.round(subtotal * 0.07);
   const grand = subtotal + vat;
+
+  const confirmOrder = async () => {
+    setErr(''); setOk('');
+    if (cartItems.length === 0) return;
+    setBusy(true);
+    for (const item of cartItems) {
+      const r = await adjustStock(item.sku, 'out', item.cartQty, user && user.name ? user.name : 'ระบบ');
+      if (r && r.ok === false) {
+        setBusy(false);
+        setErr(`บันทึกไม่สำเร็จที่ "${item.name}": ${r.error}`);
+        return;
+      }
+    }
+    setBusy(false);
+    setOk('ยืนยันใบสั่งขายสำเร็จ ตัดสต็อกเรียบร้อยแล้ว');
+    setCart({});
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 380px', gap: 24, alignItems: 'flex-start' }}>
@@ -1004,8 +964,11 @@ function SalesScreen({ products, cart, setCart, mobile }) {
                   <span>ยอดรวมทั้งสิ้น</span><span style={{ fontFamily: MONO }}>{money(grand)}</span>
                 </div>
               </div>
-              <button style={{ width: '100%', padding: '14px', background: GREEN, color: '#fff', border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700, marginTop: 16 }}>
-                ยืนยันใบสั่งขาย
+              {err && <div style={{ color: RED, fontSize: '12.5px', marginTop: 12, textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+              {ok && <div style={{ color: GREEN, fontSize: '12.5px', marginTop: 12, textAlign: 'center', background: '#dcfce7', padding: '8px', borderRadius: 8 }}>✅ {ok}</div>}
+              <button onClick={confirmOrder} disabled={busy}
+                style={{ width: '100%', padding: '14px', background: GREEN, color: '#fff', border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700, marginTop: 16, cursor: 'pointer', opacity: busy ? .6 : 1 }}>
+                {busy ? 'กำลังบันทึก…' : 'ยืนยันใบสั่งขาย'}
               </button>
             </>
           )}
@@ -1132,22 +1095,28 @@ function MoveReportScreen({ movements, moveFilter, setMoveFilter, mobile }) {
 /* ══════════════════════════════════════════════════════════════
    CHECKLIST
    ══════════════════════════════════════════════════════════════ */
-function ChecklistScreen({ checks, setChecks, notes, setNotes, surveyCustomer, setSurveyCustomer, surveyor, setSurveyor, surveyDate, setSurveyDate, surveys, setSurveys, navigate, setJustSaved, mobile }) {
+function ChecklistScreen({ checks, setChecks, notes, setNotes, surveyCustomer, setSurveyCustomer, surveyor, setSurveyor, surveyDate, setSurveyDate, surveys, addSurvey, navigate, setJustSaved, mobile }) {
   const totalChecks = checkDefs.reduce((s, g) => s + g[1].length, 0);
   const doneCount = Object.values(checks).filter(Boolean).length;
   const pct = totalChecks > 0 ? Math.round(doneCount / totalChecks * 100) : 0;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setErr('');
     const newSurvey = {
-      id: 'SV-2569-' + String(surveys.length + 1).padStart(4, '0'),
+      id: 'SV-' + Date.now(),
       customer: surveyCustomer || 'ไม่ระบุ',
       surveyor: surveyor || 'ไม่ระบุ',
       date: surveyDate || new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }),
       roof: '—', azimuth: '—', sizeKw: 0, panels: 0,
-      done: doneCount, total: totalChecks,
+      done: doneCount, total: totalChecks, notes,
       status: pct === 100 ? 'approved' : 'pending',
     };
-    setSurveys(prev => [newSurvey, ...prev]);
+    setBusy(true);
+    const r = await addSurvey(newSurvey);
+    setBusy(false);
+    if (r && r.ok === false) { setErr(r.error || 'บันทึกไม่สำเร็จ'); return; }
     setChecks({});
     setNotes({});
     setSurveyCustomer('');
@@ -1200,12 +1169,13 @@ function ChecklistScreen({ checks, setChecks, notes, setNotes, surveyCustomer, s
             <text x="70" y="66" textAnchor="middle" fontSize="28" fontWeight="800" fill="#0d1b2e" fontFamily={MONO}>{pct}%</text>
             <text x="70" y="86" textAnchor="middle" fontSize="12" fill="#7b8fa3">{doneCount}/{totalChecks} รายการ</text>
           </svg>
-          <button onClick={handleSubmit} disabled={doneCount === 0}
+          {err && <div style={{ color: RED, fontSize: '12.5px', marginBottom: 10, background: '#fee2e2', padding: '8px', borderRadius: 8 }}>{err}</div>}
+          <button onClick={handleSubmit} disabled={doneCount === 0 || busy}
             style={{
               width: '100%', padding: '14px', background: doneCount > 0 ? GREEN : '#c7d4e3', color: '#fff',
-              border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700, cursor: doneCount > 0 ? 'pointer' : 'default',
+              border: 'none', borderRadius: 12, fontSize: '15px', fontWeight: 700, cursor: doneCount > 0 ? 'pointer' : 'default', opacity: busy ? .6 : 1,
             }}>
-            บันทึกผลสำรวจ
+            {busy ? 'กำลังบันทึก…' : 'บันทึกผลสำรวจ'}
           </button>
         </CardWrap>
 
@@ -1231,15 +1201,37 @@ function ChecklistScreen({ checks, setChecks, notes, setNotes, surveyCustomer, s
 /* ══════════════════════════════════════════════════════════════
    SURVEY REPORT
    ══════════════════════════════════════════════════════════════ */
-function SurveyReportScreen({ surveys, justSaved, mobile }) {
+const SURVEY_STATUS = [
+  { key: 'pending', label: 'รอตรวจ' },
+  { key: 'approved', label: 'อนุมัติ' },
+  { key: 'rework', label: 'แก้ไข' },
+];
+
+function SurveyReportScreen({ surveys, justSaved, mobile, canEdit, updateSurvey, deleteSurvey }) {
   const approved = surveys.filter(s => s.status === 'approved').length;
   const pending = surveys.filter(s => s.status === 'pending').length;
   const rework = surveys.filter(s => s.status === 'rework').length;
+  const [busyId, setBusyId] = useState(null);
 
   const statusMap = {
     approved: { label: 'อนุมัติ', fg: '#15803d', bg: '#dcfce7' },
     pending: { label: 'รอตรวจ', fg: '#b45309', bg: '#fef3c7' },
     rework: { label: 'แก้ไข', fg: '#b91c1c', bg: '#fee2e2' },
+  };
+
+  const changeStatus = async (s, status) => {
+    if (status === s.status) return;
+    setBusyId(s.id);
+    const r = await updateSurvey(s.id, { status });
+    setBusyId(null);
+    if (r && r.ok === false) window.alert('บันทึกไม่สำเร็จ: ' + r.error);
+  };
+  const doDelete = async (s) => {
+    if (!window.confirm(`ยืนยันลบผลสำรวจ "${s.customer}" (${s.id})?`)) return;
+    setBusyId(s.id);
+    const r = await deleteSurvey(s.id);
+    setBusyId(null);
+    if (r && r.ok === false) window.alert('ลบไม่สำเร็จ: ' + r.error);
   };
 
   const statCards = [
@@ -1279,13 +1271,15 @@ function SurveyReportScreen({ surveys, justSaved, mobile }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               <Th>รหัส</Th><Th>ลูกค้า</Th><Th>ผู้สำรวจ</Th><Th>วันที่</Th><Th>ขนาด</Th><Th>ความคืบหน้า</Th><Th>สถานะ</Th>
+              {canEdit && <Th style={{ textAlign: 'right' }}>จัดการ</Th>}
             </tr></thead>
             <tbody>
               {surveys.map((s, i) => {
                 const st = statusMap[s.status] || statusMap.pending;
                 const svPct = Math.round(s.done / s.total * 100);
+                const rowBusy = busyId === s.id;
                 return (
-                  <tr key={i}>
+                  <tr key={s.id || i}>
                     <Td style={{ fontFamily: MONO, fontSize: '12px', fontWeight: 600, color: BLUE }}>{s.id}</Td>
                     <Td style={{ fontWeight: 600 }}>{s.customer}</Td>
                     <Td style={{ fontSize: '12.5px' }}>{s.surveyor}</Td>
@@ -1299,7 +1293,21 @@ function SurveyReportScreen({ surveys, justSaved, mobile }) {
                         <span style={{ fontSize: '11.5px', fontFamily: MONO, fontWeight: 600, color: '#7b8fa3' }}>{svPct}%</span>
                       </div>
                     </Td>
-                    <Td><span style={pill(st.label, st.fg, st.bg)}>{st.label}</span></Td>
+                    <Td>
+                      {canEdit ? (
+                        <select value={s.status} disabled={rowBusy} onChange={e => changeStatus(s, e.target.value)}
+                          style={{ fontSize: '11.5px', fontWeight: 600, padding: '4px 8px', borderRadius: 20, color: st.fg, background: st.bg, border: 'none', cursor: 'pointer' }}>
+                          {SURVEY_STATUS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                        </select>
+                      ) : (
+                        <span style={pill(st.label, st.fg, st.bg)}>{st.label}</span>
+                      )}
+                    </Td>
+                    {canEdit && (
+                      <Td style={{ textAlign: 'right' }}>
+                        <button onClick={() => doDelete(s)} disabled={rowBusy} title="ลบ" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}>🗑</button>
+                      </Td>
+                    )}
                   </tr>
                 );
               })}
